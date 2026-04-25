@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AI-powered Smart Health Risk Predictor with personalized recommendations.">
+    <title>AI Health Risk Predictor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="bg-particles" id="particles"></div>
+    <div class="container">
+        <header class="header" id="header">
+            <div class="logo-section">
+                <div class="logo-icon">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                        <path d="M20 4L22.5 14.5L33 12L25.5 20L33 28L22.5 25.5L20 36L17.5 25.5L7 28L14.5 20L7 12L17.5 14.5L20 4Z" fill="url(#grad)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                        <defs><linearGradient id="grad" x1="7" y1="4" x2="33" y2="36"><stop offset="0%" stop-color="#06d6a0"/><stop offset="100%" stop-color="#118ab2"/></linearGradient></defs>
+                    </svg>
+                </div>
+                <div>
+                    <h1>AI Health Risk Predictor</h1>
+                    <p class="subtitle">Machine Learning-Powered Health Assessment</p>
+                </div>
+            </div>
+            <div class="model-badge"><span class="badge-dot"></span>Model Accuracy: {{ model_accuracy }}%</div>
+        </header>
+
+        <main class="main-content">
+            <section class="card form-card" id="form-section">
+                <div class="card-header">
+                    <h2>Enter Your Health Parameters</h2>
+                    <p>Provide your health metrics for an AI-powered risk assessment</p>
+                </div>
+                <form id="healthForm" class="health-form">
+                    <div class="form-grid">
+                        <div class="form-group"><label for="age"><span class="label-icon">🎂</span>Age (years)</label><input type="number" id="age" name="age" placeholder="e.g., 35" min="1" max="120" required><span class="input-hint">1 — 120 years</span></div>
+                        <div class="form-group"><label for="bp"><span class="label-icon">🩸</span>Blood Pressure</label><input type="number" id="bp" name="bp" placeholder="e.g., 120" min="40" max="250" required><span class="input-hint">Systolic mmHg</span></div>
+                        <div class="form-group"><label for="sugar"><span class="label-icon">🍬</span>Blood Sugar</label><input type="number" id="sugar" name="sugar" placeholder="e.g., 100" min="30" max="500" required><span class="input-hint">Fasting mg/dL</span></div>
+                        <div class="form-group"><label for="cholesterol"><span class="label-icon">🫀</span>Cholesterol</label><input type="number" id="cholesterol" name="cholesterol" placeholder="e.g., 200" min="80" max="500" required><span class="input-hint">Total mg/dL</span></div>
+                        <div class="form-group"><label for="heart_rate"><span class="label-icon">💓</span>Heart Rate</label><input type="number" id="heart_rate" name="heart_rate" placeholder="e.g., 72" min="30" max="200" required><span class="input-hint">Resting bpm</span></div>
+                        <div class="form-group"><label for="bmi"><span class="label-icon">⚖️</span>BMI</label><input type="number" id="bmi" name="bmi" placeholder="e.g., 24.5" min="10" max="60" step="0.1" required><span class="input-hint">10.0 — 60.0</span></div>
+                    </div>
+                    <button type="submit" class="submit-btn" id="predict-btn">
+                        <span class="btn-text">🔬 Analyze Health Risk</span>
+                        <span class="btn-loader" style="display:none;"><span class="spinner"></span> Analyzing...</span>
+                    </button>
+                </form>
+            </section>
+
+            <section class="card result-card hidden" id="result-section">
+                <div class="card-header"><h2>Your Health Assessment</h2><p>AI-Generated Risk Analysis & Personalized Recommendations</p></div>
+                <div class="risk-display" id="risk-display">
+                    <div class="risk-gauge" id="risk-gauge">
+                        <div class="gauge-ring">
+                            <svg viewBox="0 0 200 200" class="gauge-svg">
+                                <circle cx="100" cy="100" r="85" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="12"/>
+                                <circle cx="100" cy="100" r="85" fill="none" stroke-width="12" stroke-dasharray="534" stroke-dashoffset="534" stroke-linecap="round" class="gauge-progress" id="gauge-progress"/>
+                            </svg>
+                            <div class="gauge-center"><span class="risk-level" id="risk-level">—</span><span class="risk-subtitle">Risk Level</span></div>
+                        </div>
+                    </div>
+                    <div class="risk-meta">
+                        <div class="meta-item"><span class="meta-label">Confidence</span><span class="meta-value" id="confidence-value">—</span></div>
+                        <div class="probability-bars">
+                            <div class="prob-row"><span class="prob-label">Low</span><div class="prob-bar"><div class="prob-fill prob-low" id="prob-low"></div></div><span class="prob-value" id="prob-low-val">0%</span></div>
+                            <div class="prob-row"><span class="prob-label">Normal</span><div class="prob-bar"><div class="prob-fill prob-normal" id="prob-normal"></div></div><span class="prob-value" id="prob-normal-val">0%</span></div>
+                            <div class="prob-row"><span class="prob-label">High</span><div class="prob-bar"><div class="prob-fill prob-high" id="prob-high"></div></div><span class="prob-value" id="prob-high-val">0%</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="recommendations-section"><h3>💡 Personalized Recommendations</h3><ul class="recommendations-list" id="recommendations-list"></ul></div>
+                <div class="preventive-section"><h3>🛡️ Preventive Measures</h3><ul class="preventive-list" id="preventive-list"></ul></div>
+                <button class="reset-btn" id="reset-btn" onclick="resetForm()">🔄 New Assessment</button>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>⚕️ This tool provides AI-based estimates only. Always consult a qualified healthcare professional.</p>
+            <p class="footer-tech">Powered by RandomForest ML · FastAPI · DevOps Pipeline</p>
+        </footer>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
