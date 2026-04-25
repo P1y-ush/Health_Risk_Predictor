@@ -1,0 +1,183 @@
+pipeline {
+    agent any
+
+    triggers {
+        githubPush()
+        pollSCM('H/2 * * * *')
+    }
+
+    environment {
+        DOCKER_IMAGE = "p1yush123/health-risk-predictor"
+        KUBE_NAMESPACE = "default"
+        VAULT_ADDR = "http://127.0.0.1:8200"
+    }
+
+    stages {
+
+        stage('Clone') {
+            steps {
+                git branch: 'main', url: 'https://github.com/P1y-ush/Health_Risk_Predictor.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Train Model') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    python ml/train.py
+                '''
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    python -m pytest tests/ -v --tb=short
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $DOCKER_IMAGE:${BUILD_NUMBER} .'
+                sh 'docker tag $DOCKER_IMAGE:${BUILD_NUMBER} $DOCKER_IMAGE:latest'
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
+                sh '''
+                    trivy image --severity HIGH,CRITICAL \
+                        --exit-code 0 \
+                        --format table \
+                        $DOCKER_IMAGE:${BUILD_NUMBER} || true
+                '''
+            }
+        }
+
+        stage('Fetch Secrets from Vault') {
+            steps {
+                script {
+                    try {
+                        withCredentials([string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN')]) {
+                            sh '''
+                                export VAULT_ADDR=${VAULT_ADDR}
+                                export VAULT_TOKEN=${VAULT_TOKEN}
+
+                                # Fetch DockerHub credentials from Vault
+                                DOCKER_USER=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
+                                    $VAULT_ADDR/v1/secret/data/dockerhub | \
+                                    python3 -c "import sys,json; print(json.load(sys.stdin)['data']['data']['username'])")
+                                DOCKER_PASS=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
+                                    $VAULT_ADDR/v1/secret/data/dockerhub | \
+                                    python3 -c "import sys,json; print(json.load(sys.stdin)['data']['data']['password'])")
+
+                                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                                echo "Logged in to DockerHub via Vault secrets"
+                            '''
+                        }
+                    } catch (Exception e) {
+                        echo "Vault not available, falling back to Jenkins credentials"
+                        withCredentials([usernamePassword(
+                            credentialsId: 'dockerhub-creds',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                sh 'docker push $DOCKER_IMAGE:${BUILD_NUMBER}'
+                sh 'docker push $DOCKER_IMAGE:latest'
+            }
+        }
+
+        stage('Deploy with Ansible') {
+            steps {
+                sh '''
+                    export KUBECONFIG=/var/lib/jenkins/.kube/config
+                    ansible-playbook -i ansible/inventory/hosts ansible/deploy.yml \
+                        --skip-tags "docker_build" \
+                        -e "docker_image=$DOCKER_IMAGE docker_tag=${BUILD_NUMBER}" \
+                        || echo "Ansible deployment - some tasks may have been skipped"
+                '''
+            }
+        }
+
+        stage('Deploy (Blue-Green + HPA)') {
+            steps {
+                sh '''
+                    export KUBECONFIG=/var/lib/jenkins/.kube/config
+
+                    # Ensure deployments and service exist
+                    kubectl apply -f kubernetes/blue-deployment.yaml -n $KUBE_NAMESPACE
+                    kubectl apply -f kubernetes/green-deployment.yaml -n $KUBE_NAMESPACE
+                    kubectl apply -f kubernetes/service.yaml -n $KUBE_NAMESPACE
+
+                    # Apply Horizontal Pod Autoscaler
+                    kubectl apply -f kubernetes/hpa.yaml -n $KUBE_NAMESPACE
+
+                    # Update green deployment with new image
+                    kubectl set image deployment/health-app-green \
+                        health-app=$DOCKER_IMAGE:${BUILD_NUMBER} \
+                        -n $KUBE_NAMESPACE
+
+                    # Wait for green to be ready
+                    kubectl rollout status deployment/health-app-green \
+                        -n $KUBE_NAMESPACE --timeout=120s
+
+                    # Switch traffic to green
+                    kubectl patch service health-app-service \
+                        -n $KUBE_NAMESPACE \
+                        -p '{"spec":{"selector":{"slot":"green"}}}'
+
+                    echo "Blue-Green deployment complete. HPA active."
+                    kubectl get hpa -n $KUBE_NAMESPACE
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext(
+                subject: "BUILD SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Build successful!
+                |Docker image: ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                |Blue-Green deployment completed with HPA.
+                |Check: ${env.BUILD_URL}""".stripMargin(),
+                to: "sharma.piyush4019@gmail.com"
+            )
+        }
+
+        failure {
+            emailext(
+                subject: "BUILD FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """Build failed. Check Jenkins console output.
+                |URL: ${env.BUILD_URL}""".stripMargin(),
+                to: "sharma.piyush4019@gmail.com"
+            )
+        }
+
+        always {
+            sh 'docker rmi $DOCKER_IMAGE:${BUILD_NUMBER} || true'
+            sh 'rm -rf venv || true'
+        }
+    }
+}
