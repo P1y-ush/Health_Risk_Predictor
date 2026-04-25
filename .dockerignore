@@ -1,0 +1,16 @@
+.git
+.gitignore
+venv
+__pycache__
+*.pyc
+*.pyo
+docker/
+jenkins/
+kubernetes/
+elk/
+ansible/
+tests/
+*.md
+.dockerignore
+.idea
+.vscode
