@@ -1,0 +1,38 @@
+---
+# Monitoring Role - Deploy ELK Stack using Docker Compose
+
+- name: Check Docker Compose is available
+  command: docker compose version
+  register: compose_version
+  changed_when: false
+  ignore_errors: yes
+
+- name: Fall back to docker-compose v1
+  command: docker-compose --version
+  register: compose_v1
+  changed_when: false
+  when: compose_version.rc != 0
+  ignore_errors: yes
+
+- name: Start ELK Stack
+  command: docker compose up -d
+  args:
+    chdir: "{{ playbook_dir }}/../elk"
+  register: elk_result
+  ignore_errors: yes
+
+- name: Wait for Elasticsearch to be ready
+  uri:
+    url: "http://localhost:9200/_cluster/health"
+    method: GET
+    return_content: yes
+    status_code: 200
+  register: es_health
+  retries: 10
+  delay: 10
+  until: es_health.status == 200
+  ignore_errors: yes
+
+- name: Display ELK status
+  debug:
+    msg: "ELK Stack status: {{ elk_result.stdout | default('Started') }}"

@@ -1,0 +1,38 @@
+---
+# Docker Role - Build, tag, and push Docker image
+
+- name: Check Docker is installed
+  command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: Display Docker version
+  debug:
+    msg: "Docker version: {{ docker_version.stdout }}"
+
+- name: Build Docker image
+  command: >
+    docker build
+    -t {{ docker_image }}:{{ docker_tag }}
+    {{ playbook_dir }}/../
+  register: build_result
+
+- name: Tag image with build number
+  command: >
+    docker tag {{ docker_image }}:{{ docker_tag }}
+    {{ docker_image }}:{{ ansible_date_time.epoch }}
+  when: build_result.rc == 0
+
+- name: Login to DockerHub
+  command: >
+    docker login -u {{ dockerhub_username }} -p {{ dockerhub_password }}
+  no_log: true
+  when: dockerhub_username is defined and dockerhub_password is defined
+
+- name: Push Docker image (latest)
+  command: docker push {{ docker_image }}:{{ docker_tag }}
+  when: dockerhub_username is defined
+
+- name: Push Docker image (versioned)
+  command: docker push {{ docker_image }}:{{ ansible_date_time.epoch }}
+  when: dockerhub_username is defined

@@ -1,0 +1,27 @@
+---
+# Main playbook for Health Risk Predictor deployment
+# Uses Ansible Roles for modular design
+
+- name: Build and Push Docker Image
+  hosts: docker_hosts
+  become: yes
+  vars:
+    docker_image: "p1yush123/health-risk-predictor"
+    docker_tag: "latest"
+  roles:
+    - docker
+
+- name: Deploy to Kubernetes
+  hosts: k8s_hosts
+  vars:
+    docker_image: "p1yush123/health-risk-predictor"
+    docker_tag: "latest"
+    kube_namespace: "default"
+  roles:
+    - kubernetes
+
+- name: Setup Monitoring (ELK Stack)
+  hosts: local
+  become: yes
+  roles:
+    - monitoring

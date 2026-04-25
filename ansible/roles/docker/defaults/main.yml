@@ -1,0 +1,3 @@
+---
+docker_image: "p1yush123/health-risk-predictor"
+docker_tag: "latest"

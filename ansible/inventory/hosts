@@ -1,0 +1,8 @@
+[local]
+localhost ansible_connection=local
+
+[docker_hosts]
+localhost ansible_connection=local
+
+[k8s_hosts]
+localhost ansible_connection=local

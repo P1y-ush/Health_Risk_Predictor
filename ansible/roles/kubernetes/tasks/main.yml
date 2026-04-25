@@ -1,0 +1,52 @@
+---
+# Kubernetes Role - Deploy using Blue-Green strategy with HPA
+
+- name: Apply Blue deployment
+  command: >
+    kubectl apply -f {{ playbook_dir }}/../kubernetes/blue-deployment.yaml
+    -n {{ kube_namespace }}
+  register: blue_result
+
+- name: Apply Green deployment
+  command: >
+    kubectl apply -f {{ playbook_dir }}/../kubernetes/green-deployment.yaml
+    -n {{ kube_namespace }}
+  register: green_result
+
+- name: Apply Service
+  command: >
+    kubectl apply -f {{ playbook_dir }}/../kubernetes/service.yaml
+    -n {{ kube_namespace }}
+
+- name: Apply Horizontal Pod Autoscaler
+  command: >
+    kubectl apply -f {{ playbook_dir }}/../kubernetes/hpa.yaml
+    -n {{ kube_namespace }}
+
+- name: Update Green deployment with new image
+  command: >
+    kubectl set image deployment/health-app-green
+    health-app={{ docker_image }}:{{ docker_tag }}
+    -n {{ kube_namespace }}
+
+- name: Wait for Green rollout to complete
+  command: >
+    kubectl rollout status deployment/health-app-green
+    -n {{ kube_namespace }} --timeout=120s
+  register: rollout_result
+
+- name: Switch traffic to Green
+  command: >
+    kubectl patch service health-app-service
+    -n {{ kube_namespace }}
+    -p '{"spec":{"selector":{"slot":"green"}}}'
+  when: rollout_result.rc == 0
+
+- name: Display deployment status
+  command: kubectl get pods -l app=health-app -n {{ kube_namespace }}
+  register: pod_status
+  changed_when: false
+
+- name: Show pods
+  debug:
+    msg: "{{ pod_status.stdout_lines }}"
