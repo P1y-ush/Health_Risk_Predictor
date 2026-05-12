@@ -11,6 +11,7 @@ import logging
 import os
 import json
 from datetime import datetime, timezone
+import requests as http_requests
 
 # ── Structured Logging ────────────────────────────────────────────
 logging.basicConfig(
@@ -18,6 +19,8 @@ logging.basicConfig(
     format='%(message)s'
 )
 logger = logging.getLogger("health-predictor")
+
+LOGSTASH_URL = os.environ.get("LOGSTASH_URL", "http://host.docker.internal:5000")
 
 
 def log_json(level, message, **kwargs):
@@ -29,7 +32,13 @@ def log_json(level, message, **kwargs):
         "message": message,
         **kwargs
     }
+    # Log to stdout
     logger.info(json.dumps(entry))
+    # Send to Logstash via HTTP (non-blocking, best-effort)
+    try:
+        http_requests.post(LOGSTASH_URL, json=entry, timeout=1)
+    except Exception:
+        pass  # Don't let logging failures affect the app
 
 
 # ── App Setup ─────────────────────────────────────────────────────
