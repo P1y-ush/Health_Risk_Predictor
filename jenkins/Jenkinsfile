@@ -23,8 +23,10 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'python3 -m venv venv'
-                sh './venv/bin/pip install -r requirements.txt'
+                sh 'rm -rf venv'
+                sh 'python3 -m venv --clear venv'
+                sh './venv/bin/pip install --upgrade pip'
+                sh './venv/bin/pip install --force-reinstall -r requirements.txt'
             }
         }
 
