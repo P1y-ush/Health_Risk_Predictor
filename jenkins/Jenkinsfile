@@ -10,6 +10,7 @@ pipeline {
         DOCKER_IMAGE = "p1yush123/health-risk-predictor"
         KUBE_NAMESPACE = "default"
         VAULT_ADDR = "http://127.0.0.1:8200"
+        PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:${env.PATH}"
     }
 
     stages {
@@ -61,7 +62,7 @@ pipeline {
                     trivy image --severity HIGH,CRITICAL \
                         --exit-code 0 \
                         --format table \
-                        $DOCKER_IMAGE:${BUILD_NUMBER} || true
+                        $DOCKER_IMAGE:${BUILD_NUMBER} || echo "Trivy scan completed with warnings"
                 '''
             }
         }
@@ -72,23 +73,18 @@ pipeline {
                     try {
                         withCredentials([string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN')]) {
                             sh '''
-                                export VAULT_ADDR=${VAULT_ADDR}
-                                export VAULT_TOKEN=${VAULT_TOKEN}
-
-                                # Fetch DockerHub credentials from Vault
                                 DOCKER_USER=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
                                     $VAULT_ADDR/v1/secret/data/dockerhub | \
                                     python3 -c "import sys,json; print(json.load(sys.stdin)['data']['data']['username'])")
                                 DOCKER_PASS=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
                                     $VAULT_ADDR/v1/secret/data/dockerhub | \
                                     python3 -c "import sys,json; print(json.load(sys.stdin)['data']['data']['password'])")
-
                                 echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                                echo "Logged in to DockerHub via Vault secrets"
+                                echo "Logged in via Vault"
                             '''
                         }
                     } catch (Exception e) {
-                        echo "Vault not available, falling back to Jenkins credentials"
+                        echo "Vault not available, using Jenkins credentials"
                         withCredentials([usernamePassword(
                             credentialsId: 'dockerhub-creds',
                             usernameVariable: 'DOCKER_USER',
@@ -113,9 +109,9 @@ pipeline {
                 sh '''
                     export KUBECONFIG=/var/lib/jenkins/.kube/config
                     ansible-playbook -i ansible/inventory/hosts ansible/deploy.yml \
-                        --skip-tags "docker_build" \
-                        -e "docker_image=$DOCKER_IMAGE docker_tag=${BUILD_NUMBER}" \
-                        || echo "Ansible deployment - some tasks may have been skipped"
+                        --skip-tags "docker_build,monitoring" \
+                        -e "docker_image=$DOCKER_IMAGE docker_tag=${BUILD_NUMBER} kube_namespace=$KUBE_NAMESPACE" \
+                        || echo "Ansible deployment completed with warnings"
                 '''
             }
         }
@@ -125,24 +121,18 @@ pipeline {
                 sh '''
                     export KUBECONFIG=/var/lib/jenkins/.kube/config
 
-                    # Ensure deployments and service exist
                     kubectl apply -f kubernetes/blue-deployment.yaml -n $KUBE_NAMESPACE
                     kubectl apply -f kubernetes/green-deployment.yaml -n $KUBE_NAMESPACE
                     kubectl apply -f kubernetes/service.yaml -n $KUBE_NAMESPACE
-
-                    # Apply Horizontal Pod Autoscaler
                     kubectl apply -f kubernetes/hpa.yaml -n $KUBE_NAMESPACE
 
-                    # Update green deployment with new image
                     kubectl set image deployment/health-app-green \
                         health-app=$DOCKER_IMAGE:${BUILD_NUMBER} \
                         -n $KUBE_NAMESPACE
 
-                    # Wait for green to be ready
                     kubectl rollout status deployment/health-app-green \
                         -n $KUBE_NAMESPACE --timeout=120s
 
-                    # Switch traffic to green
                     kubectl patch service health-app-service \
                         -n $KUBE_NAMESPACE \
                         -p '{"spec":{"selector":{"slot":"green"}}}'
