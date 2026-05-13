@@ -32,7 +32,14 @@ pipeline {
 
         stage('Train Model') {
             steps {
-                sh './venv/bin/python ml/train.py'
+                sh '''
+                    if [ ! -f ml/model.pkl ] || git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q "^ml/"; then
+                        echo "Training model (model missing or ml/ files changed)..."
+                        ./venv/bin/python ml/train.py
+                    else
+                        echo "Skipping training — model.pkl exists and ml/ unchanged"
+                    fi
+                '''
             }
         }
 

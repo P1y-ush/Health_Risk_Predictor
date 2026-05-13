@@ -21,11 +21,14 @@ done
 
 echo "✅ Vault is running at $VAULT_ADDR"
 
+# Helper: run vault commands inside the container
+VAULT_EXEC="docker exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=${VAULT_TOKEN} vault-server"
+
 # Enable KV secrets engine (v2)
-vault secrets enable -path=secret kv-v2 2>/dev/null || echo "   KV engine already enabled"
+$VAULT_EXEC vault secrets enable -path=secret kv-v2 2>/dev/null || echo "   KV engine already enabled"
 
 # Store DockerHub credentials
-vault kv put secret/dockerhub \
+$VAULT_EXEC vault kv put secret/dockerhub \
     username="p1yush123" \
     password="your-dockerhub-password" \
     registry="https://index.docker.io/v1/"
@@ -33,7 +36,7 @@ vault kv put secret/dockerhub \
 echo "✅ DockerHub credentials stored at secret/dockerhub"
 
 # Store application secrets
-vault kv put secret/health-app \
+$VAULT_EXEC vault kv put secret/health-app \
     app_secret_key="your-app-secret-key-change-me" \
     db_password="your-db-password" \
     api_key="your-api-key"
@@ -41,14 +44,14 @@ vault kv put secret/health-app \
 echo "✅ Application secrets stored at secret/health-app"
 
 # Store Kubernetes config
-vault kv put secret/kubernetes \
+$VAULT_EXEC vault kv put secret/kubernetes \
     cluster_name="minikube" \
     namespace="default"
 
 echo "✅ Kubernetes config stored at secret/kubernetes"
 
 # Create policy for Jenkins
-vault policy write jenkins-policy - <<EOF
+$VAULT_EXEC sh -c 'vault policy write jenkins-policy - <<EOF
 path "secret/data/dockerhub" {
   capabilities = ["read"]
 }
@@ -58,12 +61,12 @@ path "secret/data/health-app" {
 path "secret/data/kubernetes" {
   capabilities = ["read"]
 }
-EOF
+EOF'
 
 echo "✅ Jenkins policy created"
 
 # Create token for Jenkins with the policy
-JENKINS_TOKEN=$(vault token create -policy=jenkins-policy -period=720h -format=json | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])")
+JENKINS_TOKEN=$($VAULT_EXEC vault token create -policy=jenkins-policy -period=720h -format=json | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])")
 
 echo ""
 echo "══════════════════════════════════════════════════"
